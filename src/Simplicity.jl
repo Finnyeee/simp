@@ -113,7 +113,6 @@ Profit calculator within round
   *  prices - prices chosen
 """
 function payoffs(model, prices)
-
     return softmax((model.qualities .- prices)./model.substitution)
 
 end;
@@ -156,7 +155,7 @@ function initialize(model::Model, type::String)
     end
 
     if length(model.action_space) == 1
-        model.action_space = ones(model.p)*model.action_space
+        model.action_space = [model.action_space for _ in 1:model.p]
     elseif !(length(model.qualities) in [1, model.p])
         throw(ArgumentError("Action space $(model.action_space) should be of size $(model.p) or $(1)"))
     end
@@ -178,6 +177,21 @@ function initialize(model::Model, type::String)
     return [fill(optimism[i], length(state_space), model.grid) for i in 1:model.p], rand(1:model.grid, model.p) # Initialized Q matrix and states 
 end
 
+"""
+    price_grid(model)
+
+Generates the price_grid array used to map indices into prices.
+  *  model - model structure
+"""
+function price_grid(model):
+    price_grid_array = [zeros(model.grid) for _ in model.p]
+    for i in 1:model.p
+        increment = (model.action_space[i][1] - model.action_space[i][0])/(model.grid-1)
+        price_grid_array[i] = [model.action_space[i][0] + increment*(j-1) for j in 1:model.grid]
+    end
+    return price_grid_array
+end
+
 
 """
     train(model,n,policy,payoffs)
@@ -193,13 +207,16 @@ Simulate an auction according to format
 """
 function train(model::Model,n::Int64,policy,payoffs,type)
     
+    # Initializations
     Q, states = initialize(model, type)
 
     monitoring_technology = constructor(model, type)
 
+    price_grid = price_grid(model)
+
     P = zeros(n,model.p)
 
-    #TODO(b/1) generalize logic to p =/= 2
+    # TODO(b/1) generalize logic to p =/= 2
     Q_history = [zeros(n,length(Q[1][:,1]),model.grid) for _ in 1:model.p]
         
     if model.beta==0
@@ -214,21 +231,23 @@ function train(model::Model,n::Int64,policy,payoffs,type)
         # Update entropy of the policy 
         temperature = model.tau .*(1-indicator_beta) + model.tau *Base.exp(-model.beta*i)*(indicator_beta)
         
-        #TODO(b/2): check type is vector of vectors
+        # TODO(b/2): check type is vector of vectors
         states_flat = [flatten_states(model, monitoring_technology[(states,identity)][1:end-1]) for identity in 1:model.p] 
 
         # Random Experimentation 
-        prices = policy(model, Q, states_flat, temperature, i) #returns vector of dimension p (2)
+        prices_index = policy(model, Q, states_flat, temperature, i) #returns vector of dimension p (2)
         
+        prices = [price_grid[i][prices_index[i]] for i in 1:model.p]
+
         P[i,:] = prices
-        states = prices
-        states_next_flat = [flatten_states(model, monitoring_technology[(states,identity)][1:end-1]) for identity in 1:model.p]
+        states = prices_index
+        states_next_flat = [flatten_states(model, monitoring_technology[(prices_index,identity)][1:end-1]) for identity in 1:model.p]
 
         payoff = payoffs(model, prices)
         
-        #Update the Q-values
+        # Update the Q-values
         for j=1:model.p
-            Q[j] = Qupdate(model, Q, prices, payoff, states_flat, states_next_flat, j)
+            Q[j] = Qupdate(model, Q, prices_index, payoff, states_flat, states_next_flat, j)
             Q_history[j][i,:,:] = Q[j]
         end
     end
