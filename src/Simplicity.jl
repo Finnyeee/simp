@@ -11,12 +11,9 @@ using Main.Memories
 export Simulation
 export Model
 export boltzmann
-export egreedy
 export payoffs
-export Qupdate
-export initialize
 export train
-
+export price_grid
 
 """
     simulation(B, P, Q)
@@ -81,28 +78,28 @@ function boltzmann(model::Model, Q, states, tau::Float64, i::Int64)
     return [sample(1:model.grid, Weights(softmax(tau.*Q[i][states[i],:]))) for i in 1:model.p]
 end
 
-"""
-    eGreedy(Q,m,eprobn_,j,n)
+# """
+#     eGreedy(Q,m,eprobn_,j,n)
 
-Basic e-greedy action choice
-  *  Q - current Q-functions
-  *  m - instance of Model
-  *  eprobn_ - experimentation parameter 1-eprob in stage i 
-  *  j - current iteration
-  *  n - total iterations
-"""
-function egreedy(Q,m::Model,eprobn_::Float64,j,n)
-    b = Array{Int8}(undef,m.p)
-    for i in 1:m.p
-        epsilon = rand(Uniform(0,1))
-        if epsilon>eprobn_
-            b[i] = rand(1:m.grid+m.no_bid)
-        else
-            b[i]=sample(findall(Q[:,i].==maximum(Q[:,i])))
-        end
-    end
-    return b
-end
+# Basic e-greedy action choice
+#   *  Q - current Q-functions
+#   *  m - instance of Model
+#   *  eprobn_ - experimentation parameter 1-eprob in stage i 
+#   *  j - current iteration
+#   *  n - total iterations
+# """
+# function egreedy(Q,m::Model,eprobn_::Float64,j,n)
+#     b = Array{Int8}(undef,m.p)
+#     for i in 1:m.p
+#         epsilon = rand(Uniform(0,1))
+#         if epsilon>eprobn_
+#             b[i] = rand(1:m.grid+m.no_bid)
+#         else
+#             b[i]=sample(findall(Q[:,i].==maximum(Q[:,i])))
+#         end
+#     end
+#     return b
+# end
 
 
 """
@@ -132,6 +129,16 @@ function Qupdate(model::Model, Q, prices, outcomes, states, states_next, i::Int6
     return Q[i]
 end
 
+
+"""
+    random_initializer(matrix)
+
+Simple randomizer for initialization
+  *  matrix - two-dimensional array
+"""
+function random_initializer(matrix::Matrix{Float64})
+    return matrix .+ (rand(size(matrix)[1], size(matrix)[2]) .* 10 .- 5) 
+end
 
 """
     initialize(model::Model, type::String)
@@ -174,7 +181,7 @@ function initialize(model::Model, type::String)
         throw(ArgumentError("Memory type $(type) is not implemented"))
     end
 
-    return [fill(optimism[i], length(state_space), model.grid) for i in 1:model.p], rand(1:model.grid, model.p) # Initialized Q matrix and states 
+    return [random_initializer(fill(optimism[i], length(state_space), model.grid)) for i in 1:model.p], rand(1:model.grid, model.p) # Initialized Q matrix and states 
 end
 
 """
@@ -183,7 +190,7 @@ end
 Generates the price_grid array used to map indices into prices.
   *  model - model structure
 """
-function price_grid(model):
+function price_grid(model)
     price_grid_array = [zeros(model.grid) for _ in model.p]
     for i in 1:model.p
         increment = (model.action_space[i][1] - model.action_space[i][0])/(model.grid-1)
@@ -251,7 +258,8 @@ function train(model::Model,n::Int64,policy,payoffs,type)
             Q_history[j][i,:,:] = Q[j]
         end
     end
-    return Simulation(P, Q_history)
+    # return Simulation(P, Q_history) -- commented out to save RAM
+    return Q
 end
 
 

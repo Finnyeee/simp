@@ -1,13 +1,14 @@
-includet(pwd()*"\\src\\Memories.jl")
-includet(pwd()*"\\src\\Simplicity.jl")
-
-
+include(pwd()*"\\src\\Memories.jl")
+include(pwd()*"\\src\\Simplicity.jl")
 
 using Distributed
 using ProgressMeter
 using DelimitedFiles
+using JSON
 
-addprocs(parse(Int,ARGS[1]))
+const THREADS = parse(Int,ARGS[1])
+
+addprocs(THREADS)
 
 
 
@@ -36,5 +37,17 @@ addprocs(parse(Int,ARGS[1]))
 
 end
 
-const k::Int64 = parse(Int64,ARGS[3])
 const TYPE::String = parse(String,ARGS[2])
+const K::Int64 = parse(Int64,ARGS[3])
+
+const TYPE_ARRAY::Array{String} = [TYPE for _ in 1:THREADS]
+
+const RESULTS::Array{Dict}
+@showprogress for i in 1:K
+    outcomes = pmap(TYPE_ARRAY -> train(model, ITERATIONS, boltzmann, payoffs, TYPE_ARRAY))
+    global push!(RESULTS, outcomes[i] for i in 1:THREADS)
+end
+
+open("data_$TYPE.json", "w") do f
+    JSON.print(f, JSON.json(RESULTS))
+end
