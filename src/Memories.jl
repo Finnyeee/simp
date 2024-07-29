@@ -48,7 +48,7 @@ function incremental_merge_from_bottom(last_prices,identity,k)
         throw(ValueError("Too many players! Only implemented for p = 2."))
     end
     #Trick: swapping identities this way only works with 2 firms.
-    if last_prices[3-identity] in 1:k+1
+    if last_prices[3-identity] in 1:k
         return [1, identity]
     else
         return [last_prices[3-identity],identity]
@@ -108,6 +108,7 @@ Turns indices into states
 """
 #TODO(b/1): implement logic for p =/= 2
 #TODO(b/3): fix unflattening map
+
 function unflatten_states(model, index)
     return [index % model.grid, div(index,model.grid)]
 end

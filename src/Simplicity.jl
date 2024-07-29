@@ -162,7 +162,7 @@ function initialize(model::Model, type::String)
     end
 
     if length(model.action_space) == 1
-        model.action_space = [model.action_space for _ in 1:model.p]
+        model.action_space = [model.action_space[1] for _ in 1:model.p]
     elseif !(length(model.qualities) in [1, model.p])
         throw(ArgumentError("Action space $(model.action_space) should be of size $(model.p) or $(1)"))
     end
@@ -176,7 +176,7 @@ function initialize(model::Model, type::String)
     elseif type == "competitor_only"
         state_space = 1:model.grid
     elseif bottom_filter !== nothing
-        state_space = 1:model_grid
+        state_space = 1:(model.grid) 
     else
         throw(ArgumentError("Memory type $(type) is not implemented"))
     end
@@ -185,16 +185,16 @@ function initialize(model::Model, type::String)
 end
 
 """
-    price_grid(model)
+    _price_grid(model::Model)
 
 Generates the price_grid array used to map indices into prices.
   *  model - model structure
 """
-function price_grid(model)
-    price_grid_array = [zeros(model.grid) for _ in model.p]
+function _price_grid(model::Model)
+    price_grid_array = [zeros(model.grid) for _ in 1:model.p]
     for i in 1:model.p
-        increment = (model.action_space[i][1] - model.action_space[i][0])/(model.grid-1)
-        price_grid_array[i] = [model.action_space[i][0] + increment*(j-1) for j in 1:model.grid]
+        increment = (model.action_space[i][2] - model.action_space[i][1])/(model.grid-1)
+        price_grid_array[i] = [model.action_space[i][1] + increment*(j-1) for j in 1:model.grid]
     end
     return price_grid_array
 end
@@ -219,7 +219,7 @@ function train(model::Model,n::Int64,policy,payoffs,type)
 
     monitoring_technology = constructor(model, type)
 
-    price_grid = price_grid(model)
+    price_grid = _price_grid(model)
 
     P = zeros(n,model.p)
 
@@ -241,6 +241,7 @@ function train(model::Model,n::Int64,policy,payoffs,type)
         # TODO(b/2): check type is vector of vectors
         states_flat = [flatten_states(model, monitoring_technology[(states,identity)][1:end-1]) for identity in 1:model.p] 
 
+
         # Random Experimentation 
         prices_index = policy(model, Q, states_flat, temperature, i) #returns vector of dimension p (2)
         
@@ -254,12 +255,13 @@ function train(model::Model,n::Int64,policy,payoffs,type)
         
         # Update the Q-values
         for j=1:model.p
+            #println("states: ", states, "\nstates_flat: ", states_flat, "\nstates_next_flat: ", states_next_flat, "\nprice_index:", prices_index)
             Q[j] = Qupdate(model, Q, prices_index, payoff, states_flat, states_next_flat, j)
             Q_history[j][i,:,:] = Q[j]
         end
     end
     # return Simulation(P, Q_history) -- commented out to save RAM
-    return Q
+    return Dict([(i,Q[i]) for i in 1:model.p])
 end
 
 
