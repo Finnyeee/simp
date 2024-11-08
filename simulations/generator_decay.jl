@@ -14,8 +14,8 @@ const P::Int64 = 2
 const GAMMA::Float64 = 0.95
 const ALPHA::Float64 = 0.05
 const GRID::Int64 = 15
-const TAU::Float64 = 0.2
-const BETA::Float64 = 0.0
+const TAU::Float64 = 0.25
+const BETA::Float64 = 0.000002
 const MU::Float64 = 0.25
 const OUTSIDE_OPTION::Float64 = 0.0
 
@@ -34,10 +34,10 @@ const ITERATIONS::Int64 = Int(parse(Float64,ARGS[3])) #1e6
 
 const RESULTS = Array{Dict{Int64,Matrix{Float64}}}(undef,K)
 @showprogress for i in 1:K
-    outcome = train(model, ITERATIONS, boltzmann, payoffs, TYPE, costs)
+    outcome = train(model, ITERATIONS, egreedy, payoffs, TYPE, costs)
     RESULTS[i] = outcome
 end
 
-open("data_$TYPE.json", "w") do f
+open("data_decay_$TYPE.json", "w") do f
     JSON.print(f, JSON.json(RESULTS))
 end

@@ -56,6 +56,52 @@ function incremental_merge_from_bottom(last_prices,identity,k)
 end
 
 """
+    incremental_merge_from_top(last_prices, identity, k, grid)
+
+Memory type. Returns only the price of the competitor in the last period, but returns 
+a single state if the competitor's price is one of the top grid-k prices.
+  *  last_prices - vector of prices in the past period
+  *  identity - identity of the firm currently considered
+  *  k - the number of states to merge from the top
+  *  grid - the number of prices for each competitor
+"""
+function incremental_merge_from_top(last_prices, identity, k, grid)
+    if !(identity in 1:2)
+        throw(ValueError("Too many players! Only implemented for p = 2."))
+    end
+    k_opposite = grid - k
+    #Trick: swapping identities this way only works with 2 firms.
+    if last_prices[3-identity] in k_opposite:grid
+        return [grid-1, identity]
+    else
+        return [last_prices[3-identity],identity]
+    end
+end
+
+"""
+    threshold_fixed(last_prices, identity, k, grid)
+
+Memory type. Returns only the price of the competitor in the last period, but returns 
+a single state if the competitor's price is one of the bottom k prices.
+  *  last_prices - vector of prices in the past period
+  *  identity - identity of the firm currently considered
+  *  k - the threshold that determines below which price to merge
+  *  grid - the number of prices for each competitor
+"""
+function threshold_fixed(last_prices, identity, k, grid)
+    if !(identity in 1:2)
+        throw(ValueError("Too many players! Only implemented for p = 2."))
+    end
+    #Trick: swapping identities this way only works with 2 firms.
+    if last_prices[3-identity] in 1:k
+        return [1, identity]
+    else
+        return [grid-1,identity]
+    end
+end
+
+
+"""
     constructor(model, type)
 
 Constructor for dictionary mapping histories to state spaces.
@@ -66,6 +112,8 @@ Constructor for dictionary mapping histories to state spaces.
 function constructor(model, type::String)
     dict = Dict()
     bottom_filter = match(r"^incremental_merge_from_bottom_(\d+)$", type)
+    top_filter = match(r"^incremental_merge_from_top_(\d+)$", type)
+    threshold_filter = match(r"^threshold_fixed_(\d+)$", type)
     if type == "full_monitoring"
         for (i,j,identity) in Iterators.product(1:model.grid, 1:model.grid, 1:model.p)
             dict[([i,j],identity)] = full_monitoring([i,j],identity)
@@ -77,7 +125,15 @@ function constructor(model, type::String)
     elseif bottom_filter !== nothing
         for (i,j,identity) in Iterators.product(1:model.grid, 1:model.grid, 1:model.p)
             dict[([i,j],identity)] = incremental_merge_from_bottom([i,j],identity,parse(Int,bottom_filter.captures[1]))
-        end 
+        end
+    elseif top_filter !== nothing
+        for (i,j,identity) in Iterators.product(1:model.grid, 1:model.grid, 1:model.p)
+            dict[([i,j],identity)] = incremental_merge_from_top([i,j],identity,parse(Int,top_filter.captures[1]),model.grid)
+        end
+    elseif threshold_filter !== nothing
+        for (i,j,identity) in Iterators.product(1:model.grid, 1:model.grid, 1:model.p)
+            dict[([i,j],identity)] = threshold_fixed([i,j],identity,parse(Int,threshold_filter.captures[1]),model.grid)
+        end
     else 
         throw(ArgumentError("Memory type $(type) is not implemented"))
     end
