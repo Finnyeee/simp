@@ -69,7 +69,7 @@ function incremental_merge_from_top(last_prices, identity, k, grid)
     if !(identity in 1:2)
         throw(ValueError("Too many players! Only implemented for p = 2."))
     end
-    k_opposite = grid - k
+    k_opposite = grid - k + 1
     #Trick: swapping identities this way only works with 2 firms.
     if last_prices[3-identity] in k_opposite:grid
         return [grid-1, identity]
