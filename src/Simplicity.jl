@@ -61,9 +61,13 @@ mutable struct Model
     beta::Float64
     action_space
     state_space
+    options::Vector{String}
 end
 
-# Model(p,gamma,alpha,costs,grid,tau,beta) = 
+Model(p,gamma,alpha,costs,qualities,substitution,outside_option,grid,tau,beta,action_space) = 
+        Model(p,gamma,alpha,costs,qualities,substitution,outside_option,grid,tau,beta,action_space,[]) # initialize model without options
+
+        # Model(p,gamma,alpha,costs,grid,tau,beta) = 
 #         Model(p,gamma,alpha,costs,grid,tau,beta,(costs,5*costs) #initialize the value of action_space
 
 
@@ -104,14 +108,14 @@ end
 
 
 """
-    payoffs(model, prices, costs)::Vector{Float64}
+    payoffs(model, prices)::Vector{Float64}
 
 Profit calculator within round
   *  model - model structure
   *  prices - prices chosen
 """
-function payoffs(model, prices, costs)
-    return (prices .- costs).*softmax((model.qualities .- prices)./model.substitution)
+function payoffs(model, prices)
+    return (prices .- model.costs).*softmax((model.qualities .- prices)./model.substitution)
 
 end;
 
@@ -129,6 +133,29 @@ function Qupdate(model::Model, Q, prices, outcomes, states, states_next, i::Int6
     Q[i][states[i],prices[i]] += model.alpha * (outcomes[i] + model.gamma*maximum(Q[i][states_next[i],:]) - Q[i][states[i],prices[i]]) 
     return Q[i]
 end
+
+"""
+    Qupdate_synchronous(model,prices,payoff,states,i)
+
+Function responsible for the update of the Q matrix
+  *  model - model structure
+  *  prices - prices chosen (px1)
+  *  payoff - function to compute payoffs
+  *  states - the state used to condition the strategy (px1)-tuples
+  *  i - identity of the agent being updated   
+"""
+function Qupdate_synchronous(model::Model, Q, prices, payoff, price_grid, states, states_next, i::Int64)
+
+    for j in model.grid
+        prices_vec = deepcopy(prices)
+        prices_vec[i] = price_grid[i][j]
+        outcomes = payoff(model, prices_vec)
+        Q[i][states[i],j] += model.alpha * (outcomes[i] + model.gamma*maximum(Q[i][states_next[i],:]) - Q[i][states[i],j]) 
+    end
+
+    return Q[i]
+end
+
 
 
 """
@@ -249,20 +276,29 @@ function train(model::Model,n::Int64,policy,payoffs,type,costs)
         # Random Experimentation 
         prices_index = policy(model, Q, states_flat, temperature, i) #returns vector of dimension p (2)
         
+
         prices = [price_grid[i][prices_index[i]] for i in 1:model.p]
 
         #P[i,:] = prices
         states = prices_index
         states_next_flat = [flatten_states(model, monitoring_technology[(prices_index,identity)][1:end-1]) for identity in 1:model.p]
 
-        payoff = payoffs(model, prices, costs)
-        
+        payoff = payoffs(model, prices)
         # Update the Q-values
         for j=1:model.p
+            if model.options ==[]
+                Q[j] = Qupdate(model, Q, prices_index, payoff, states_flat, states_next_flat, j)
+            elseif model.options[1] == "synchronous"
+                Q[j] = Qupdate_synchronous(model, Q, prices_index, payoffs, price_grid, states_flat, states_next_flat, j)
+ 
+            else
+                throw(ArgumentError("Option $(model.options[1]) is not implemented"))
+            end
             #   println("states: ", states, "\nstates_flat: ", states_flat, "\nstates_next_flat: ", states_next_flat, "\nprice_index:", prices_index)
-            Q[j] = Qupdate(model, Q, prices_index, payoff, states_flat, states_next_flat, j)
+            #Q[j] = Qupdate(model, Q, prices_index, payoff, states_flat, states_next_flat, j)
             #Q_history[j][i,:,:] = Q[j]
         end
+
     end
     # return Simulation(P, Q_history) -- commented out to save RAM
     return Dict([(i,Q[i]) for i in 1:model.p])
@@ -322,7 +358,7 @@ function train_once_save_all(model::Model,n::Int64,policy,payoffs,type,costs)
         states = prices_index
         states_next_flat = [flatten_states(model, monitoring_technology[(prices_index,identity)][1:end-1]) for identity in 1:model.p]
 
-        payoff = payoffs(model, prices, costs)
+        payoff = payoffs(model, prices)
         
         # Update the Q-values
         for j=1:model.p
