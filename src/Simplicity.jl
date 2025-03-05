@@ -13,6 +13,7 @@ export Model
 export boltzmann
 export egreedy
 export payoffs
+export secondprice
 export train
 export price_grid
 export train_once_save_all
@@ -82,7 +83,7 @@ Basic softmax/boltzmann action choice
   *  j - identity of player
 """
 function boltzmann(model::Model, Q, states, tau::Float64, j::Int64)
-    return [sample(1:model.grid, Weights(softmax(tau.*Q[i][states[i],:]))) for i in 1:model.p]
+    return [sample(1:model.grid, Weights(softmax(tau.*Q[i][states[i]]))) for i in 1:model.p]
 end
 
 """
@@ -98,7 +99,7 @@ Basic e-greedy action choice
 function egreedy(model::Model, Q, states , epsilon::Float64, j::Int64)
     samples = []
     for i in 1:model.p
-        best_action = argmax(Q[i][states[i], :])
+        best_action = argmax(Q[i][states[i]])
         base_weight = fill(1/(epsilon*model.grid), model.grid)
         base_weight[best_action] += 1-(1/epsilon)
         push!(samples,sample(1:model.grid,ProbabilityWeights(base_weight)))
@@ -110,14 +111,15 @@ end
 """
     payoffs(model, prices)::Vector{Float64}
 
-Profit calculator within round
+Bertrand profits within round
   *  model - model structure
   *  prices - prices chosen
 """
 function payoffs(model, prices)
     return (prices .- model.costs).*softmax((model.qualities .- prices)./model.substitution)
 
-end;
+end
+
 
 """
     Qupdate(model,prices,outcomes,states,i)
@@ -130,7 +132,7 @@ Function responsible for the update of the Q matrix
   *  i - identity of the agent being updated
 """
 function Qupdate(model::Model, Q, prices, outcomes, states, states_next, i::Int64)
-    Q[i][states[i],prices[i]] += model.alpha * (outcomes[i] + model.gamma*maximum(Q[i][states_next[i],:]) - Q[i][states[i],prices[i]]) 
+    Q[i][states[i]][prices[i]] += model.alpha * (outcomes[i] + model.gamma*maximum(Q[i][states_next[i]]) - Q[i][states[i]][prices[i]]) 
     return Q[i]
 end
 
@@ -146,11 +148,11 @@ Function responsible for the update of the Q matrix
 """
 function Qupdate_synchronous(model::Model, Q, prices, payoff, price_grid, states, states_next, i::Int64)
 
-    for j in model.grid
-        prices_vec = deepcopy(prices)
+    for j in 1:model.grid
+        prices_vec = deepcopy([price_grid[k][prices[k]] for k in 1:model.p])
         prices_vec[i] = price_grid[i][j]
         outcomes = payoff(model, prices_vec)
-        Q[i][states[i],j] += model.alpha * (outcomes[i] + model.gamma*maximum(Q[i][states_next[i],:]) - Q[i][states[i],j]) 
+        Q[i][states[i]][j] += model.alpha * (outcomes[i] + model.gamma*maximum(Q[i][states_next[i]]) - Q[i][states[i]][j]) 
     end
 
     return Q[i]
@@ -164,8 +166,8 @@ end
 Simple randomizer for initialization
   *  matrix - two-dimensional array
 """
-function random_initializer(matrix::Matrix{Float64})
-    return matrix .+ (rand(size(matrix)[1], size(matrix)[2]) .* 10 .- 5) 
+function random_initializer(vector::Vector{Float64})
+    return vector .+ (rand(size(vector)) .* 10 .- 5) 
 end
 
 """
@@ -173,9 +175,12 @@ end
 
 Function responsible for the update of the Q matrix
   *  model - model structure
-  *  type - string that controls memory types
+  *  monitoring - dictionary. For more details, see train.
 """
-function initialize(model::Model, type::String)
+function initialize(model::Model, monitoring)
+
+    monitoring_technology = constructor(model, monitoring)
+
     #Preprocessing 
     if length(model.costs) == 1
         model.costs = ones(model.p)*Float64(model.costs)
@@ -197,22 +202,24 @@ function initialize(model::Model, type::String)
 
     optimism = [2*(model.action_space[i][end] - model.costs[i]) for i in 1:model.p]
 
-    #TODO(b/1) generalize logic to p =/= 2
-    bottom_filter = match(r"^incremental_merge_from_bottom_(\d+)$", type)
-    top_filter = match(r"^incremental_merge_from_top_(\d+)$", type)
-    threshold_filter = match(r"^threshold_fixed_(\d+)$", type)
-    
-    if type == "full_monitoring"
-        state_space = Iterators.product(1:model.grid,1:model.grid)
-    elseif type == "competitor_only"
-        state_space = 1:model.grid
-    elseif bottom_filter !== nothing || top_filter !== nothing || threshold_filter !== nothing
-        state_space = 1:(model.grid) 
-    else
-        throw(ArgumentError("Memory type $(type) is not implemented"))
+    """
+    This simplifies the representation of the Q matrix. It allows us to look only at the states
+    effectively used by the players. 
+    """
+    relevant_keys = [[] for _ in 1:model.p]
+    for (key, value) in monitoring_technology
+        if !(value[1:2] in relevant_keys[key[2]])
+            push!(relevant_keys[key[2]], value[1:2])
+        end
     end
 
-    return [random_initializer(fill(optimism[i], length(state_space), model.grid)) for i in 1:model.p], rand(1:model.grid, model.p) # Initialized Q matrix and states 
+    Q = Dict(i => Dict(relevant_keys[i] .=> [random_initializer(
+        fill(optimism[i], model.grid)) for _ in relevant_keys[i]]) for i in 1:model.p)
+
+    return [Q, rand(1:model.grid, model.p), monitoring_technology]
+
+    #return 
+    #[random_initializer(fill(optimism[i], length(state_space), model.grid)) for i in 1:model.p], rand(1:model.grid, model.p) # Initialized Q matrix and states 
 end
 
 """
@@ -232,7 +239,7 @@ end
 
 
 """
-    train(model,n,policy,payoffs)
+    train(model,n,policy,payoffs,monitoring)
 
 Simulate an auction according to format
   *  model - model structure
@@ -242,13 +249,16 @@ Simulate an auction according to format
          use eGreedy for greedy
          use Pushdown for downward force
   *  payoffs - function for payoff computation
+  *  monitoring - dictionary for the construction of monitoring technology. 
+                  Suggested config: save a json dictionary of arrays where 
+                  each key is a player and each value is an array of threshold arrays
+                  for each player. For example, player 1 could have thresholds [[1,4,6],[2]]. 
 """
-function train(model::Model,n::Int64,policy,payoffs,type,costs)
+function train(model::Model,n::Int64,policy,payoffs,monitoring)
     
     # Initializations
-    Q, states = initialize(model, type)
-
-    monitoring_technology = constructor(model, type)
+    Q, states_raw, monitoring_technology = initialize(model, monitoring)
+    states_next = nothing
 
     price_grid = _price_grid(model)
 
@@ -270,27 +280,27 @@ function train(model::Model,n::Int64,policy,payoffs,type,costs)
         temperature = 1/(model.tau .*((1-indicator_beta) + Base.exp(-model.beta*i)*(indicator_beta)))
         
         # TODO(b/2): check type is vector of vectors
-        states_flat = [flatten_states(model, monitoring_technology[(states,identity)][1:end-1]) for identity in 1:model.p] 
-
+        if states_next == nothing
+            states = [monitoring_technology[(states_raw, identity)][1:end-1] for identity in 1:model.p]
+        else
+            states = deepcopy(states_next)
+        end
 
         # Random Experimentation 
-        prices_index = policy(model, Q, states_flat, temperature, i) #returns vector of dimension p (2)
+        prices_index = policy(model, Q, states, temperature, i) #returns vector of dimension p (2)
         
-
         prices = [price_grid[i][prices_index[i]] for i in 1:model.p]
 
-        #P[i,:] = prices
-        states = prices_index
-        states_next_flat = [flatten_states(model, monitoring_technology[(prices_index,identity)][1:end-1]) for identity in 1:model.p]
+        states_raw = prices_index
+        states_next = [monitoring_technology[(states_raw, identity)][1:end-1] for identity in 1:model.p]
 
         payoff = payoffs(model, prices)
         # Update the Q-values
         for j=1:model.p
-            if model.options ==[]
-                Q[j] = Qupdate(model, Q, prices_index, payoff, states_flat, states_next_flat, j)
+            if model.options == []
+                Q[j] = Qupdate(model, Q, prices_index, payoff, states, states_next, j)
             elseif model.options[1] == "synchronous"
-                Q[j] = Qupdate_synchronous(model, Q, prices_index, payoffs, price_grid, states_flat, states_next_flat, j)
- 
+                Q[j] = Qupdate_synchronous(model, Q, prices_index, payoffs, price_grid, states, states_next, j)
             else
                 throw(ArgumentError("Option $(model.options[1]) is not implemented"))
             end
@@ -300,6 +310,7 @@ function train(model::Model,n::Int64,policy,payoffs,type,costs)
         end
 
     end
+    #display("text/plain",Q[1])
     # return Simulation(P, Q_history) -- commented out to save RAM
     return Dict([(i,Q[i]) for i in 1:model.p])
 end

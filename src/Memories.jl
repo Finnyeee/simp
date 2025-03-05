@@ -1,141 +1,62 @@
 module Memories
 
+#export __pooling
+#export __full_monitoring
 export constructor
-export full_monitoring
-export competitor_only
-export incremental_merge_from_bottom
 export flatten_states
 export unflatten_states
 
 """
-    full_monitoring(last_prices, identity)
-
-Basic memory type, returns the entire past period vector of prices.
-  *  last_prices - vector of prices in the past period
-  *  identity - identity of the firm currently considered
+    __pooling(action, thresholds)
+This function pools the actions of the players according to the thresholds specified in the model.
+See the description of the function __full_monitoring for more details.
+It is a helper function for __full_monitoring.
+It is a private function, and should not be called directly.
 """
-function full_monitoring(last_prices, identity)
-    return vcat(last_prices,identity)
+function __pooling(action, thresholds::AbstractVector)
+    if thresholds == []
+        return action
+    end
+    bin = 1
+    for threshold in thresholds
+        if action > threshold
+            bin += 1
+        else
+            break
+        end
+    end
+    return bin
 end
 
 """
-    competitor_only(last_prices, identity)
-
-Memory type. Returns only the price of the competitor in the last period.
-  *  last_prices - vector of prices in the past period
-  *  identity - identity of the firm currently considered
+    __full_monitoring(last_prices, identity; thresholds)
+This function controls the pooling of past prices for the players. 
+It is the highest level of generality, and includes all other memory forms in the library.
+It requires a dict of thresholds for each player, which specifies for each player where pooling for a state ends. 
+For example, if thresholds[1] = [[1,4,6],[2]], then player 1 knows that:
+- its last price was either 1, between 2 and 4, between 4 and 6, or above 6, and 
+- its opponent's last price was either between 1 and 2, or above 3.
+This is a private method, and should not be called directly.
 """
-function competitor_only(last_prices, identity)
-    if !(identity in 1:2)
-        throw(DimensionMismatch("Too many players! Only implemented for p = 2."))
-    end
-    
-    #Trick: swapping identities this way only works with 2 firms.
-    return [last_prices[3-identity], identity]    
-end
-
-"""
-    incremental_merge_from_bottom(last_prices, identity, k)
-
-Memory type. Returns only the price of the competitor in the last period, but returns 
-a single state if the competitor's price is one of the bottom k prices.
-  *  last_prices - vector of prices in the past period
-  *  identity - identity of the firm currently considered
-  *  k - the number of states to merge from the bottom
-"""
-function incremental_merge_from_bottom(last_prices,identity,k)
-    if !(identity in 1:2)
-        throw(ValueError("Too many players! Only implemented for p = 2."))
-    end
-    #Trick: swapping identities this way only works with 2 firms.
-    if last_prices[3-identity] in 1:k
-        return [1, identity]
+function __full_monitoring(last_prices::AbstractVector, identity::Int64; thresholds = nothing)
+    if thresholds[identity] == nothing || thresholds[identity] ==[]
+        return vcat(last_prices, identity)
     else
-        return [last_prices[3-identity],identity]
+        thresholds_identity = thresholds[identity]
+        pooled_prices = [__pooling(price, thresholds_identity[i]) for (i,price) in enumerate(last_prices)]
+        return vcat(pooled_prices, identity)
     end
 end
 
 """
-    incremental_merge_from_top(last_prices, identity, k, grid)
-
-Memory type. Returns only the price of the competitor in the last period, but returns 
-a single state if the competitor's price is one of the top grid-k prices.
-  *  last_prices - vector of prices in the past period
-  *  identity - identity of the firm currently considered
-  *  k - the number of states to merge from the top
-  *  grid - the number of prices for each competitor
-"""
-function incremental_merge_from_top(last_prices, identity, k, grid)
-    if !(identity in 1:2)
-        throw(ValueError("Too many players! Only implemented for p = 2."))
-    end
-    k_opposite = grid - k + 1
-    #Trick: swapping identities this way only works with 2 firms.
-    if last_prices[3-identity] in k_opposite:grid
-        return [grid-1, identity]
-    else
-        return [last_prices[3-identity],identity]
-    end
-end
+    constructor(mode, monitoring)
+This function creates a dictionary of monitoring functions for each player in the model.
 
 """
-    threshold_fixed(last_prices, identity, k, grid)
-
-Memory type. Returns only the price of the competitor in the last period, but returns 
-a single state if the competitor's price is one of the bottom k prices.
-  *  last_prices - vector of prices in the past period
-  *  identity - identity of the firm currently considered
-  *  k - the threshold that determines below which price to merge
-  *  grid - the number of prices for each competitor
-"""
-function threshold_fixed(last_prices, identity, k, grid)
-    if !(identity in 1:2)
-        throw(ValueError("Too many players! Only implemented for p = 2."))
-    end
-    #Trick: swapping identities this way only works with 2 firms.
-    if last_prices[3-identity] in 1:k
-        return [1, identity]
-    else
-        return [grid-1,identity]
-    end
-end
-
-
-"""
-    constructor(model, type)
-
-Constructor for dictionary mapping histories to state spaces.
-  *  model - Model instance. Not typed because of inclusion order.
-  *  type - a string serving as switch between memory types
-"""
-#TODO(b/1): implement logic for p =/= 2
-function constructor(model, type::String)
+function constructor(model, monitoring)
     dict = Dict()
-    bottom_filter = match(r"^incremental_merge_from_bottom_(\d+)$", type)
-    top_filter = match(r"^incremental_merge_from_top_(\d+)$", type)
-    threshold_filter = match(r"^threshold_fixed_(\d+)$", type)
-    if type == "full_monitoring"
-        for (i,j,identity) in Iterators.product(1:model.grid, 1:model.grid, 1:model.p)
-            dict[([i,j],identity)] = full_monitoring([i,j],identity)
-        end
-    elseif type == "competitor_only"
-        for (i,j,identity) in Iterators.product(1:model.grid, 1:model.grid, 1:model.p)
-            dict[([i,j],identity)] = competitor_only([i,j],identity)
-        end
-    elseif bottom_filter !== nothing
-        for (i,j,identity) in Iterators.product(1:model.grid, 1:model.grid, 1:model.p)
-            dict[([i,j],identity)] = incremental_merge_from_bottom([i,j],identity,parse(Int,bottom_filter.captures[1]))
-        end
-    elseif top_filter !== nothing
-        for (i,j,identity) in Iterators.product(1:model.grid, 1:model.grid, 1:model.p)
-            dict[([i,j],identity)] = incremental_merge_from_top([i,j],identity,parse(Int,top_filter.captures[1]),model.grid)
-        end
-    elseif threshold_filter !== nothing
-        for (i,j,identity) in Iterators.product(1:model.grid, 1:model.grid, 1:model.p)
-            dict[([i,j],identity)] = threshold_fixed([i,j],identity,parse(Int,threshold_filter.captures[1]),model.grid)
-        end
-    else 
-        throw(ArgumentError("Memory type $(type) is not implemented"))
+    for (i,j,identity) in Iterators.product(1:model.grid, 1:model.grid, 1:model.p)
+        dict[([i,j],identity)] = __full_monitoring([i,j],identity; thresholds=monitoring)
     end
     return dict
 end
@@ -155,8 +76,9 @@ function flatten_states(model, state)
         return state[1] 
     end
 end
+
 """
-    constructor(model, type)
+    unflatted_states(model, index)
 
 Turns indices into states
   *  model - Model instance. Not typed because of inclusion order.
@@ -169,4 +91,4 @@ function unflatten_states(model, index)
     return [index % model.grid, div(index,model.grid)]
 end
 
-end    
+end 

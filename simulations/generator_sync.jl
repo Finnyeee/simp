@@ -33,12 +33,19 @@ const TYPE::String = ARGS[1]
 const K::Int64 = parse(Int64,ARGS[2])
 const ITERATIONS::Int64 = Int(parse(Float64,ARGS[3])) #1e6
 
-const RESULTS = Array{Dict{Int64,Matrix{Float64}}}(undef,K)
-@showprogress for i in 1:K
-    outcome = train(model, ITERATIONS, egreedy, payoffs, TYPE, costs)
-    RESULTS[i] = outcome
-end
+temp = JSON.parse(JSON.parsefile(pwd()*"/simulations/configs/$TYPE.json"))
+memories=  [Dict(parse(Int,string(k))=>[identity.(v[1]), identity.(v[2])] for (k,v) in pairs(temp[i])) for i in 1:length(temp)]
 
-open("data_$TYPE.json", "w") do f
-    JSON.print(f, JSON.json(RESULTS))
+for (f,memory) in enumerate(memories)
+    print("Memory is ", memory, "\n")
+    RESULTS = Array{Dict{Int64, Dict{Vector{Int64}, Vector{Float64}}}}(undef,K)
+    @showprogress for i in 1:K
+        
+        outcome = train(model, ITERATIONS, egreedy, payoffs, memory)
+        RESULTS[i] = outcome
+    end
+
+    open("data_full_memory/data_$TYPE" * "_$f.json", "w") do f
+        JSON.print(f, JSON.json(RESULTS))
+    end
 end
