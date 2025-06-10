@@ -17,6 +17,7 @@ export secondprice
 export train
 export price_grid
 export train_once_save_all
+export initialize
 
 """
     simulation(B, P, Q)
