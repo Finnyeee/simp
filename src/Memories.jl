@@ -29,6 +29,16 @@ function __pooling(action, thresholds::AbstractVector)
 end
 
 """
+Finn here: using smth like this saves time from O(n) to O(log n)?
+
+function __pooling(action, thresholds::AbstractVector)
+    isempty(thresholds) && return action
+    return searchsortedfirst(thresholds, action)
+end
+"""
+
+
+"""
     __full_monitoring(last_prices, identity; thresholds)
 This function controls the pooling of past prices for the players. 
 It is the highest level of generality, and includes all other memory forms in the library.

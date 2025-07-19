@@ -23,7 +23,7 @@ export initialize
     simulation(B, P, Q)
 
 Base structure for simulation results
-  *  B - nxp array of bids
+  *  B - nxp array of bids                  #this is missing?
   *  P - nx1 array of prices
   *  Q - nxpxgrid array of Q matrices
 """
@@ -81,7 +81,7 @@ Basic softmax/boltzmann action choice
   *  Q - current Q-functions
   *  states - state of the world
   *  tau - boltzmann stage temperature 
-  *  j - identity of player
+  *  j - identity of player                 # not used?
 """
 function boltzmann(model::Model, Q, states, tau::Float64, j::Int64)
     return [sample(1:model.grid, Weights(softmax(tau.*Q[i][states[i]]))) for i in 1:model.p]
@@ -95,7 +95,7 @@ Basic e-greedy action choice
   *  Q - current Q-functions
   *  states - state of the world
   *  epsilon - experimentation probability 
-  *  j - identity of player
+  *  j - identity of player                 # not used?
 """
 function egreedy(model::Model, Q, states , epsilon::Float64, j::Int64)
     samples = []
@@ -200,6 +200,8 @@ function initialize(model::Model, monitoring)
     elseif !(length(model.qualities) in [1, model.p])
         throw(ArgumentError("Action space $(model.action_space) should be of size $(model.p) or $(1)"))
     end
+
+    ## Finn here: is the above process for future heterogeneous bidders?
 
     optimism = [2*(model.action_space[i][end] - model.costs[i]) for i in 1:model.p]
 
