@@ -2,6 +2,8 @@
 
 This document describes how to run the simplicity simulations from a fresh setup.
 
+**Repository:** https://github.com/martinobanchio/simplicity/tree/asym_memories
+
 ## Prerequisites
 
 - **Julia** (1.x recommended; check compatibility with `Distributions`, `NNlib`, etc.)
