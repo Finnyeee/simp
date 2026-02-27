@@ -4,7 +4,7 @@ Visualization tool for batch simulation results.
 
 Two outputs:
 1. Profit grinds — bar chart of mean profit for the 4 memory types in each batch
-2. Best-response matrices — heatmaps of learned best responses per batch
+2. Best-response state reports — state matrix (letters) + best-response price pairs (screenshot format)
 
 Usage:
     python visualize_batches.py [--data-dir data_full_memory] [--config-dir simulations/configs] [--output-dir figures]
@@ -12,6 +12,7 @@ Usage:
 
 import argparse
 import json
+import string
 from pathlib import Path
 
 import numpy as np
@@ -141,6 +142,29 @@ def profit_computer_with_errors(memory_dict, data, n_trials):
     return mean, ste
 
 
+def state_representation_matrix(mem_dict):
+    """Build 15×15 state matrix with letters for pooled states (P1's perspective)."""
+    letters = list(string.ascii_uppercase + string.ascii_lowercase)
+    labels_for_states = {}
+    for (state, repr_arr) in mem_dict.items():
+        r = repr_arr.tolist()
+        if int(r[2]) != 1:
+            continue
+        key = str(r[0:2])
+        if key not in labels_for_states:
+            labels_for_states[key] = letters.pop(0) if letters else "?"
+    rows = []
+    rows.append(["X"] + [round(float(PRICE_GRID[i]), 2) for i in range(15)])
+    for j in range(15):
+        row = [round(float(PRICE_GRID[j]), 2)]
+        for k in range(15):
+            r = mem_dict[((j + 1, k + 1), 1)].tolist()
+            key = str(r[0:2])
+            row.append(labels_for_states.get(key, "?"))
+        rows.append(row)
+    return rows
+
+
 def best_response_matrix(mem_cfg, memory_dict, identity, data, trial):
     brf = best_response(memory_dict, data, trial)
     if not brf:
@@ -225,41 +249,71 @@ def plot_profit_grinds(batch_id, items, output_dir, prefix=""):
     return out
 
 
-def plot_br_matrices(batch_id, items, output_dir, prefix="", trial=0):
-    """Best-response matrices for each memory type (one batch)."""
-    valid = [(i, it) for i, it in enumerate(items) if it[3] is not None]
-    n_mem = len(valid)
-    if n_mem == 0:
-        return None
-    fig, axes = plt.subplots(2, n_mem, figsize=(4 * n_mem, 8))
-    if n_mem == 1:
-        axes = axes.reshape(-1, 1)
-    for col, (_, (label, mem_cfg, mem_dict, data)) in enumerate(valid):
-        for player, ax_row in enumerate([0, 1]):
-            ax = axes[ax_row, col] if n_mem > 1 else axes[ax_row, 0]
-            mat, row_labs, col_labs = best_response_matrix(mem_cfg, mem_dict, player + 1, data, trial)
-            if mat is None or np.all(np.isnan(mat)):
-                ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
-                continue
-            im = ax.imshow(mat, aspect="auto", cmap="viridis", vmin=PRICE_GRID.min(), vmax=PRICE_GRID.max())
-            ax.set_xticks(np.arange(len(col_labs)))
-            ax.set_xticklabels(col_labs)
-            ax.set_yticks(np.arange(len(row_labs)))
-            ax.set_yticklabels(row_labs)
-            ax.set_xlabel("Opponent bin")
-            ax.set_ylabel("Own bin")
-            ax.set_title(f"P{player + 1}")
-            plt.colorbar(im, ax=ax, label="Best-response price")
-        axes[0, col].set_title(f"{label}\nP1 BR", fontsize=9)
-        if n_mem > 1:
-            axes[1, col].set_title(f"P2 BR", fontsize=9)
-    fig.suptitle(f"{batch_id}: Best-response matrices (trial {trial})", fontsize=12)
+def plot_br_state_report(batch_id, mem_idx, label, mem_cfg, mem_dict, data, output_dir, prefix="", trial=0):
+    """
+    Replicate screenshot format: state matrix (letters) + best-response price pairs for P1 and P2.
+    """
+    state_matrix = state_representation_matrix(mem_dict)
+    br1, _, _ = best_response_matrix(mem_cfg, mem_dict, 1, data, trial)
+    br2, _, _ = best_response_matrix(mem_cfg, mem_dict, 2, data, trial)
+
+    fig = plt.figure(figsize=(14, 10))
+    fig.patch.set_facecolor("white")
+
+    # State matrix as table
+    ax1 = fig.add_subplot(311)
+    ax1.axis("off")
+    n_rows, n_cols = len(state_matrix), len(state_matrix[0])
+    cell_text = [[str(c) for c in row] for row in state_matrix]
+    table = ax1.table(cellText=cell_text, loc="center", cellLoc="center")
+    table.auto_set_font_size(False)
+    table.set_fontsize(8)
+    table.scale(0.8, 1.2)
+    ax1.set_title("This is a representation of states. Prices that are pooled are labeled with the same letter.", fontsize=10)
+
+    # Best responses P1
+    ax2 = fig.add_subplot(312)
+    ax2.axis("off")
+    br1_text = "These are the best responses of player 1 to each state.\n\n"
+    if br1 is not None and not np.all(np.isnan(br1)):
+        for i in range(br1.shape[0]):
+            row_vals = [f"{br1[i, j]:.2f}" if not np.isnan(br1[i, j]) else "---" for j in range(br1.shape[1])]
+            br1_text += ", ".join(row_vals) + "\n"
+    else:
+        br1_text += "(no data)\n"
+    ax2.text(0.1, 0.5, br1_text, fontsize=11, family="monospace", verticalalignment="center")
+
+    # Best responses P2
+    ax3 = fig.add_subplot(313)
+    ax3.axis("off")
+    br2_text = "These are the best responses of player 2 to each state.\n\n"
+    if br2 is not None and not np.all(np.isnan(br2)):
+        for i in range(br2.shape[0]):
+            row_vals = [f"{br2[i, j]:.2f}" if not np.isnan(br2[i, j]) else "---" for j in range(br2.shape[1])]
+            br2_text += ", ".join(row_vals) + "\n"
+    else:
+        br2_text += "(no data)\n"
+    ax3.text(0.1, 0.5, br2_text, fontsize=11, family="monospace", verticalalignment="center")
+
+    fig.suptitle(f"{batch_id} — {label} (trial {trial})", fontsize=12, y=1.02)
     fig.tight_layout()
-    out = Path(output_dir) / f"{prefix}{batch_id}_br_matrices.png"
+    out = Path(output_dir) / f"{prefix}{batch_id}_mem{mem_idx + 1}_br.png"
     out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out, dpi=150)
+    fig.savefig(out, dpi=150, bbox_inches="tight", facecolor="white")
     plt.close()
     return out
+
+
+def plot_br_matrices(batch_id, items, output_dir, prefix="", trial=0):
+    """Generate state-report-format figures for each memory type (screenshot format)."""
+    valid = [(i, it) for i, it in enumerate(items) if it[3] is not None]
+    if not valid:
+        return []
+    outputs = []
+    for mem_idx, (label, mem_cfg, mem_dict, data) in valid:
+        out = plot_br_state_report(batch_id, mem_idx, label, mem_cfg, mem_dict, data, output_dir, prefix, trial)
+        outputs.append(out)
+    return outputs
 
 
 def main():
@@ -291,10 +345,10 @@ def main():
         # 1. Profit grinds (4 memory types per batch)
         out = plot_profit_grinds(batch_id, items, output_dir, prefix=fig_prefix)
         print(f"  Saved {out}")
-        # 2. Best-response matrices (for selected batches)
+        # 2. Best-response state reports (for selected batches, screenshot format)
         if batch_id in br_batch_ids:
-            out = plot_br_matrices(batch_id, items, output_dir, prefix=fig_prefix)
-            if out:
+            outputs = plot_br_matrices(batch_id, items, output_dir, prefix=fig_prefix)
+            for out in outputs:
                 print(f"  Saved {out}")
 
 

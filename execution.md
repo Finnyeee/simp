@@ -149,26 +149,23 @@ python analysis/visualize_batches.py
 
 This generates profit grind bar charts for **every batch**: `figures/sync_batch_01_profits.png` through `sync_batch_16_profits.png`. Each plot shows mean profit (with error bars) for the 4 memory types in that batch.
 
-**2. Best-response matrices**
+**2. Best-response state reports**
 
-Best-response matrices are generated only for batches listed in `--br-batches`. By default, only `batch_01` and `batch_10`:
+Best-response figures are generated only for batches listed in `--br-batches`. By default, only `batch_01` and `batch_10`. Each figure shows:
+- State representation matrix (pooled prices labeled with letters A, B, C, D, etc.)
+- Best-response price pairs for player 1
+- Best-response price pairs for player 2
 
 ```bash
 python analysis/visualize_batches.py
 ```
 
-Output: `figures/sync_batch_01_br_matrices.png` and `figures/sync_batch_10_br_matrices.png`.
+Output: `figures/sync_batch_01_mem1_br.png` through `mem4_br.png` (one per memory type) for each selected batch.
 
-To generate BR matrices for more batches:
+To generate for more batches:
 
 ```bash
 python analysis/visualize_batches.py --br-batches batch_01,batch_05,batch_10,batch_16
-```
-
-To generate BR matrices for all 16 batches:
-
-```bash
-python analysis/visualize_batches.py --br-batches batch_01,batch_02,batch_03,batch_04,batch_05,batch_06,batch_07,batch_08,batch_09,batch_10,batch_11,batch_12,batch_13,batch_14,batch_15,batch_16
 ```
 
 ### Options
@@ -179,7 +176,7 @@ python analysis/visualize_batches.py --br-batches batch_01,batch_02,batch_03,bat
 | `--config-dir` | `simulations/configs` | Directory containing batch config JSONs |
 | `--output-dir` | `figures` | Where to save the plots |
 | `--prefix` | `data_sync_` | Data file prefix (`data_sync_` or `data_multithreaded_`) |
-| `--br-batches` | `batch_01,batch_10` | Comma-separated list of batches to generate BR matrices for |
+| `--br-batches` | `batch_01,batch_10` | Comma-separated list of batches to generate BR state reports for |
 
 ### Using multithreaded data
 
@@ -194,7 +191,18 @@ python analysis/visualize_batches.py --prefix data_multithreaded_
 | Step | Command | Output |
 |------|---------|--------|
 | Profit grinds (all batches) | `python analysis/visualize_batches.py` | `figures/sync_batch_XX_profits.png` for each batch |
-| Best-response matrices | `python analysis/visualize_batches.py --br-batches batch_01,batch_10` | `figures/sync_batch_XX_br_matrices.png` for selected batches |
+| Best-response state reports | `python analysis/visualize_batches.py --br-batches batch_01,batch_10` | `figures/sync_batch_XX_memN_br.png` (state matrix + BR pairs) for selected batches |
+
+### Quick Start (visualization)
+
+After simulations have produced data in `data_full_memory/`:
+
+```bash
+pip install -r requirements.txt
+python analysis/visualize_batches.py
+```
+
+This generates all profit grinds and BR state reports for `batch_01` and `batch_10`. Add `--br-batches batch_01,batch_02,...,batch_16` to generate BR reports for all batches.
 
 ---
 
