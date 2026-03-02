@@ -16,7 +16,7 @@ using JSON
 
 const THREADS = parse(Int,ARGS[1])
 
-addprocs(THREADS,exeflags="--project=simplicity")
+addprocs(THREADS, exeflags=`--project=$(pwd())`)
 
 @everywhere include(pwd()*"/src/Memories.jl")
 @everywhere include(pwd()*"/src/Simplicity.jl")

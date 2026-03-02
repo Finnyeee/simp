@@ -147,15 +147,17 @@ Function responsible for the update of the Q matrix
   *  states - the state used to condition the strategy (px1)-tuples
   *  i - identity of the agent being updated   
 """
-function Qupdate_synchronous(model::Model, Q, prices, payoff, price_grid, states, states_next, i::Int64)
-
+function Qupdate_synchronous(model::Model, Q, prices, payoff, price_grid, states, states_next, i::Int64, monitoring_technology)
     for j in 1:model.grid
         prices_vec = deepcopy([price_grid[k][prices[k]] for k in 1:model.p])
         prices_vec[i] = price_grid[i][j]
         outcomes = payoff(model, prices_vec)
-        Q[i][states[i]][j] += model.alpha * (outcomes[i] + model.gamma*maximum(Q[i][states_next[i]]) - Q[i][states[i]][j]) 
+        # FIX: Compute correct next state for counterfactual action j
+        counterfactual_prices_index = deepcopy(prices)
+        counterfactual_prices_index[i] = j
+        states_next_j = [monitoring_technology[(counterfactual_prices_index, identity)][1:end-1] for identity in 1:model.p]
+        Q[i][states[i]][j] += model.alpha * (outcomes[i] + model.gamma*maximum(Q[i][states_next_j[i]]) - Q[i][states[i]][j]) 
     end
-
     return Q[i]
 end
 
@@ -303,7 +305,7 @@ function train(model::Model,n::Int64,policy,payoffs,monitoring)
             if model.options == []
                 Q[j] = Qupdate(model, Q, prices_index, payoff, states, states_next, j)
             elseif model.options[1] == "synchronous"
-                Q[j] = Qupdate_synchronous(model, Q, prices_index, payoffs, price_grid, states, states_next, j)
+                Q[j] = Qupdate_synchronous(model, Q, prices_index, payoffs, price_grid, states, states_next, j, monitoring_technology)
             else
                 throw(ArgumentError("Option $(model.options[1]) is not implemented"))
             end
