@@ -47,17 +47,17 @@ end
 
 const K = parse(Int64,ARGS[2])
 const ITERATIONS = Int(parse(Float64,ARGS[3])) #1e6
+# Optional 4th arg: single config name (e.g. symmetric_2bin). If omitted, run batch_01..batch_16.
+const BATCH_LIST = length(ARGS) >= 4 ? [ARGS[4]] : ["batch_$(lpad(n, 2, "0"))" for n in 1:16]
 
 # Define payoffs function (assuming it's defined in Simplicity module)
 @everywhere payoffs = Simplicity.payoffs
 
-# Process all batches from 01 to 16
-for batch_num in 1:16
-    TYPE = "batch_$(lpad(batch_num, 2, "0"))"
+for TYPE in BATCH_LIST
     println("Processing $TYPE...")
-    
-    # Parse the configuration file
-    temp = JSON.parse(JSON.parsefile(pwd()*"/simulations/configs/$TYPE.json"))
+    config_path = pwd() * "/simulations/configs/$TYPE.json"
+    isfile(config_path) || error("Config not found: $config_path")
+    temp = JSON.parse(JSON.parsefile(config_path))
     memories = [Dict(parse(Int,string(k))=>[identity.(v[1]), identity.(v[2])] for (k,v) in pairs(temp[i])) for i in 1:length(temp)]
 
     # Process each memory configuration

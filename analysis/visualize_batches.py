@@ -192,8 +192,8 @@ def load_batch_data(data_dir, config_dir, prefix="data_sync"):
     config_dir = Path(config_dir)
     data_dir = Path(data_dir)
     results = []
-    for n in range(1, 17):
-        batch_id = f"batch_{n:02d}"
+    batch_ids = [f"batch_{n:02d}" for n in range(1, 17)] + ["symmetric_2bin"]
+    for batch_id in batch_ids:
         config_path = config_dir / f"{batch_id}.json"
         if not config_path.exists():
             continue

@@ -15,6 +15,7 @@ export egreedy
 export payoffs
 export secondprice
 export train
+export train_save_Q_history
 export price_grid
 export train_once_save_all
 export initialize
@@ -318,6 +319,69 @@ function train(model::Model,n::Int64,policy,payoffs,monitoring)
     #display("text/plain",Q[1])
     # return Simulation(P, Q_history) -- commented out to save RAM
     return Dict([(i,Q[i]) for i in 1:model.p])
+end
+
+"""
+    _serialize_Q(Q)
+
+Convert Q (Dict of Dict with Vector keys) to a structure that is JSON-serializable:
+player id -> state key (e.g. "1_1") -> vector of Q-values.
+"""
+function _serialize_Q(Q)
+    out = Dict{String, Dict{String, Vector{Float64}}}()
+    for (player_id, state_dict) in Q
+        out[string(player_id)] = Dict(join(state, "_") => copy(v) for (state, v) in state_dict)
+    end
+    return out
+end
+
+"""
+    train_save_Q_history(model, n, policy, payoffs, monitoring)
+
+Same as train(), but records the full Q matrix after every iteration and returns it.
+Returns (final_Q, Q_history) where Q_history is a vector of length n of serialized Q snapshots.
+"""
+function train_save_Q_history(model::Model, n::Int64, policy, payoffs, monitoring)
+    Q, states_raw, monitoring_technology = initialize(model, monitoring)
+    states_next = nothing
+    price_grid = _price_grid(model)
+
+    if model.beta == 0
+        indicator_beta = 0
+    else
+        indicator_beta = 1
+    end
+
+    Q_history = Vector{Any}(undef, n)
+
+    for i = 1:n
+        temperature = 1/(model.tau .* ((1 - indicator_beta) + Base.exp(-model.beta * i) * (indicator_beta)))
+        if states_next == nothing
+            states = [monitoring_technology[(states_raw, identity)][1:end-1] for identity in 1:model.p]
+        else
+            states = deepcopy(states_next)
+        end
+
+        prices_index = policy(model, Q, states, temperature, i)
+        prices = [price_grid[idx][prices_index[idx]] for idx in 1:model.p]
+        states_raw = prices_index
+        states_next = [monitoring_technology[(states_raw, identity)][1:end-1] for identity in 1:model.p]
+        payoff = payoffs(model, prices)
+
+        for j in 1:model.p
+            if model.options == []
+                Q[j] = Qupdate(model, Q, prices_index, payoff, states, states_next, j)
+            elseif model.options[1] == "synchronous"
+                Q[j] = Qupdate_synchronous(model, Q, prices_index, payoffs, price_grid, states, states_next, j, monitoring_technology)
+            else
+                throw(ArgumentError("Option $(model.options[1]) is not implemented"))
+            end
+        end
+
+        Q_history[i] = _serialize_Q(Dict((idx, Q[idx]) for idx in 1:model.p))
+    end
+
+    return Dict([(i, Q[i]) for i in 1:model.p]), Q_history
 end
 
 """

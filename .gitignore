@@ -1,3 +1,11 @@
 .venv/
 __pycache__/
 *.pyc
+.DS_Store
+
+# Exclude archive, data, and figures (track everything else)
+archive/
+archieve/
+data/
+data*/
+figures/

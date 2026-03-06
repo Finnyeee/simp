@@ -104,6 +104,14 @@ julia --project=. generator_multithreaded.jl 4 4 1000000
 
 Output files: `data_full_memory/data_multithreaded_batch_XX_f.json` for batches 01–16 and memory indices 1–4.
 
+**Optional 4th argument — single config:** To run one config file (e.g. symmetric 2-bin) instead of all 16 batches:
+
+```bash
+julia --project=. generator_multithreaded.jl 4 4 2000000 symmetric_2bin
+```
+
+Output: `data_full_memory/data_multithreaded_symmetric_2bin_1.json` … `_14.json`.
+
 ### Option 3: Asynchronous generator
 
 Same interface as the sync generator, but with asynchronous updates. Writes to `data_full_memory_long/`.
@@ -111,6 +119,44 @@ Same interface as the sync generator, but with asynchronous updates. Writes to `
 ```bash
 julia --project=. simulations/generator_async.jl batch_01 4 1000000
 ```
+
+### Option 4: Symmetric 2-bin (14 memory types)
+
+Use the multithreaded generator with config name `symmetric_2bin`. Config: `simulations/configs/symmetric_2bin.json` (thresholds 1–14; both players 2 bins each).
+
+```bash
+julia --project=. generator_multithreaded.jl 4 4 2000000 symmetric_2bin
+```
+
+Output: `data_full_memory/data_multithreaded_symmetric_2bin_1.json` … `_14.json`.
+
+### Option 5: Q-history (2-bin, 2M iterations, full Q saved)
+
+Run **one** simulation per symmetric 2-bin memory type for 2 million iterations and save the **entire Q matrix at every iteration**. Use this when you need Q-history for analysis (e.g. rolling optimal prices). Output files are very large; a trim step keeps only the last 5000 iterations for plotting.
+
+**1. Run (saves full Q every iteration):**
+
+```bash
+julia --project=. run_2bin_qhistory_2m.jl
+```
+
+Output: `data_full_memory/qhistory_2m_symmetric_2bin_1.json` … `_14.json`. Each file contains `final_Q`, `Q_history` (length 2e6), and metadata.
+
+**2. Trim to last 5000 iterations (optional, to reduce size for analysis):**
+
+```bash
+julia --project=. scripts/trim_qhistory_to_last_500.jl [data_dir]
+```
+
+Default `data_dir` is `data_full_memory/`. Reads all `qhistory_2m_*.json` (excluding already trimmed), keeps the last 5000 snapshots, and writes `qhistory_2m_symmetric_2bin_<k>_trimmed.json`.
+
+**3. Plot rolling optimal prices from trimmed Q-history:**
+
+```bash
+python analysis/plot_qhistory_rolling_prices.py [--data-dir data_full_memory] [--output-dir figures] [--window 50]
+```
+
+Requires `*_trimmed.json` in the data directory. Produces `figures/qhistory_2m_symmetric_2bin_<k>_rolling_prices.png` for each trimmed file (rolling average of best-response prices over the last 5000 iterations).
 
 ---
 
@@ -186,12 +232,23 @@ If you ran the multithreaded generator instead of the sync generator:
 python analysis/visualize_batches.py --prefix data_multithreaded_
 ```
 
+### Q-history rolling prices (from trimmed Q-history)
+
+If you have run the 2-bin Q-history pipeline (Option 5) and trimmed to the last 5000 iterations:
+
+```bash
+python analysis/plot_qhistory_rolling_prices.py
+```
+
+Output: `figures/qhistory_2m_symmetric_2bin_<k>_rolling_prices.png` for each trimmed file. Optional: `--window 50` (default), `--data-dir`, `--output-dir`.
+
 ### Summary
 
 | Step | Command | Output |
 |------|---------|--------|
 | Profit grinds (all batches) | `python analysis/visualize_batches.py` | `figures/sync_batch_XX_profits.png` for each batch |
 | Best-response state reports | `python analysis/visualize_batches.py --br-batches batch_01,batch_10` | `figures/sync_batch_XX_memN_br.png` (state matrix + BR pairs) for selected batches |
+| Q-history rolling prices | `python analysis/plot_qhistory_rolling_prices.py` | `figures/qhistory_2m_symmetric_2bin_<k>_rolling_prices.png` (from `*_trimmed.json`) |
 
 ### Quick Start (visualization)
 
